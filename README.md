@@ -1,62 +1,118 @@
-# Hermes + Claude + OpenAI Setup Installer
+# Hermes Multi-Agent Workstation
 
-A repeatable Linux/WSL setup script for installing and validating:
+Turn a Linux or WSL machine into a persistent, multi-provider AI workstation built around Hermes Agent.
 
-- Claude Code
-- Hermes Agent
-- Anthropic provider configuration in Hermes
-- OpenAI direct API support in Hermes
-- Automatic post-update health checks
-- Optional VS Code Remote SSH workspace
-- Optional Antigravity integration helpers
-- Optional persistent tmux multi-agent deck
-- Optional per-agent Git worktrees
-- A local clone of `kristianvast/hermes-claude-auth` for inspection
+This project sets up the core Hermes environment, connects supported Anthropic and OpenAI workflows, keeps long-running sessions alive, adds update-health protection, and optionally layers on VS Code Remote SSH, Antigravity, tmux-based agent panes, and isolated Git worktrees.
 
-> Note: this repository does **not** automatically execute third-party authentication-bypass patches. It installs supported Hermes/Claude components, configures providers, runs diagnostics, and leaves the optional patch repository cloned locally for review.
+The goal is simple: **Hermes stays running on the box while your editor, terminal, Telegram, and other clients become interchangeable front ends.**
+
+## What this gives you
+
+- **Persistent Hermes host** for long-running agent sessions and gateway workloads
+- **Multiple AI providers** through Hermes, including Anthropic and OpenAI-compatible workflows
+- **Claude Code integration** with local credential detection and diagnostics
+- **VS Code Remote SSH workspace** for using the box like a remote AI development workstation
+- **Antigravity integration helpers** for Gemini-oriented interactive work alongside Hermes
+- **Persistent multi-agent tmux deck** with separate Architect, Implementer, Reviewer, and Research panes
+- **Per-agent Git worktrees** so concurrent coding agents do not edit the same checkout
+- **Telegram-compatible Hermes gateway** for remote/mobile access
+- **Post-update health guard** to re-check configuration and catch breakage after Hermes changes
+- **Safe, rerunnable setup** designed to reuse existing installations instead of blindly replacing them
+
+## Architecture
+
+```text
+                     YOUR DESKTOP / PHONE
+
+          VS Code        Antigravity       Telegram
+             \               |               /
+              \              |              /
+               +-------------+-------------+
+                             |
+                          SSH / API
+                             |
+                  +-----------------------+
+                  |   Linux / WSL Host    |
+                  |                       |
+                  |      Hermes Agent     |
+                  |      Hermes Gateway   |
+                  |                       |
+                  |   tmux agent deck     |
+                  |   Git worktrees       |
+                  |   update guard        |
+                  +-----------+-----------+
+                              |
+                  +-----------+-----------+
+                  |                       |
+              Anthropic                OpenAI
+```
+
+Hermes is the persistent service layer. VS Code, Antigravity, Telegram, and ordinary SSH terminals are simply different ways to reach the same machine and the same underlying agent environment.
 
 ## Quick start
 
-Core setup only:
+Clone the repository and run the installer:
 
 ```bash
+git clone https://github.com/bdeanmancom/Hermes-Claude-Subsciption-installer.git
+cd Hermes-Claude-Subsciption-installer
 chmod +x setup-hermes-claude.sh
 ./setup-hermes-claude.sh
 ```
 
-Core setup plus VS Code and persistent multi-agent tmux sessions:
+That performs the core Hermes + Claude setup without enabling the optional workspace modules.
 
-```bash
-./setup-hermes-claude.sh --vscode --multi-agent
-```
-
-Everything:
+### Build the full workstation
 
 ```bash
 ./setup-hermes-claude.sh --all
 ```
 
-If Claude authentication has not yet been completed, run `claude`, complete the Claude.ai login, exit Claude, and rerun the installer.
+That enables VS Code helpers, Antigravity integration, the persistent tmux agent deck, and per-agent worktrees.
 
-## Optional modules
+## Choose your front end
 
-```text
---vscode              Create VS Code Remote SSH workspace/tasks
---antigravity         Create Antigravity integration helpers/notes
---multi-agent         Create persistent tmux agent deck
---worktrees [PATH]    Create per-agent Git worktrees
---all                 Enable all optional modules
+You do **not** have to pick one editor or client.
+
+### VS Code
+
+Use VS Code Remote SSH as the main desktop cockpit while Hermes, tmux, credentials, and agent state remain on the Linux host.
+
+```bash
+./setup-hermes-claude.sh --vscode --multi-agent
 ```
 
-Examples:
+The generated workspace includes tasks for attaching to the Hermes agent deck and running health/auth checks.
+
+### Antigravity
+
+Use Antigravity as an additional interactive AI IDE while keeping Hermes as the persistent backend.
 
 ```bash
 ./setup-hermes-claude.sh --antigravity
-./setup-hermes-claude.sh --worktrees ~/src/my-project
-./setup-hermes-claude.sh --vscode --antigravity --multi-agent
 ```
 
-The default tmux deck creates four persistent windows:
+### Telegram
+
+Keep the Hermes gateway available for lightweight remote access, mobile requests, and checking on long-running work away from your desk.
+
+### SSH / terminal
+
+Nothing requires a GUI. SSH into the machine and attach directly to the persistent tmux session:
+
+```bash
+tmux attach -t hermes-agents
+```
+
+## Multi-agent mode
+
+Enable the persistent four-role deck:
+
+```bash
+./setup-hermes-claude.sh --multi-agent
+```
+
+Default roles:
 
 ```text
 architect
@@ -65,44 +121,140 @@ reviewer
 research
 ```
 
-The worktree module creates matching branches/worktrees under `~/hermes-worktrees/` so concurrent coding agents do not edit the same checkout.
+Each role gets its own tmux window. If matching agent worktrees exist, each window opens directly inside its own checkout.
 
-## Anthropic models
+You can override the session name:
 
-```text
-Primary:      claude-opus-5
-Fallback #1: claude-opus-4-8
-Fallback #2: claude-sonnet-5
+```bash
+HERMES_TMUX_SESSION=my-agents ./setup-hermes-claude.sh --multi-agent
 ```
 
-Override them with `CLAUDE_MODEL`, `CLAUDE_MODEL_FALLBACK_1`, and `CLAUDE_MODEL_FALLBACK_2`.
+VS Code and Antigravity helpers honor the same configured session name.
 
-## OpenAI models
+## Isolated Git worktrees
 
-Hermes direct OpenAI API support uses provider `openai-api` and detects `OPENAI_API_KEY` from your shell or `~/.hermes/.env`.
+For concurrent coding agents, give each role its own Git worktree:
 
-```text
-Primary:      gpt-5.6-sol
-Fallback #1: gpt-5.6-terra
-Fallback #2: gpt-5.6-luna
+```bash
+./setup-hermes-claude.sh --worktrees ~/src/my-project
 ```
 
-Do not commit API keys to this repository.
-
-## Architecture
+By default they are created under:
 
 ```text
-VS Code Remote SSH / Antigravity / Telegram
-                 |
-                 v
-        Linux / WSL Hermes host
-                 |
-      Hermes + tmux + Git worktrees
-        |                    |
-     Anthropic             OpenAI
+~/hermes-worktrees/
+├── architect/
+├── implementer/
+├── reviewer/
+└── research/
 ```
 
-Hermes remains the persistent service/agent layer. VS Code and Antigravity are optional front ends, while tmux keeps sessions alive through editor disconnects.
+with matching branches such as:
+
+```text
+agent/architect
+agent/implementer
+agent/reviewer
+agent/research
+```
+
+The worktree setup understands linked Git worktrees and safely handles agent branches that are already checked out elsewhere.
+
+## Provider configuration
+
+The installer configures Hermes with Anthropic as the default provider and supports OpenAI direct API access when `OPENAI_API_KEY` is available.
+
+Provider credentials should stay in supported credential stores or local configuration such as:
+
+```text
+~/.hermes/.env
+```
+
+Never commit API keys or local credentials to this repository.
+
+Model choices can be overridden with environment variables rather than editing the scripts, for example:
+
+```bash
+CLAUDE_MODEL=your-claude-model \
+OPENAI_MODEL=your-openai-model \
+./setup-hermes-claude.sh
+```
+
+## Claude Code authentication
+
+If Claude Code is not yet authenticated:
+
+```bash
+claude
+```
+
+Complete the Claude login, exit the CLI, then rerun the setup script.
+
+The installer runs diagnostics and checks for local Claude credentials before attempting Anthropic smoke tests.
+
+## Update resilience
+
+AI tooling moves quickly, and a working setup should not become confetti after an update.
+
+The repository includes an update guard that re-checks the Hermes installation after changes and verifies important pieces such as:
+
+- Hermes configuration
+- provider/model defaults
+- `hermes doctor`
+- authentication status
+- OpenAI key availability
+- local `hermes-claude-auth` checkout health/drift
+
+For a guarded manual update:
+
+```bash
+./hermes-safe-update.sh
+```
+
+Guard logs are written under:
+
+```text
+~/.hermes/logs/
+```
+
+## Optional `hermes-claude-auth` checkout
+
+The installer keeps a persistent clone of:
+
+```text
+https://github.com/kristianvast/hermes-claude-auth
+```
+
+at:
+
+```text
+~/hermes-claude-auth
+```
+
+If that checkout contains local changes, this project intentionally skips `git pull` instead of overwriting them.
+
+This repository does **not** automatically execute third-party authentication-bypass patches. It can clone and health-check the optional project, while the core installer remains focused on supported Hermes, Claude Code, provider, workspace, and multi-agent setup.
+
+## Installer options
+
+```text
+--vscode              Create VS Code Remote SSH workspace/tasks
+--antigravity         Create Antigravity integration helpers/notes
+--multi-agent         Create the persistent tmux agent deck
+--worktrees [PATH]    Create per-agent Git worktrees
+--all                 Enable all optional modules
+-h, --help            Show installer help
+```
+
+Examples:
+
+```bash
+./setup-hermes-claude.sh --vscode
+./setup-hermes-claude.sh --antigravity
+./setup-hermes-claude.sh --vscode --multi-agent
+./setup-hermes-claude.sh --worktrees ~/src/my-project
+./setup-hermes-claude.sh --all
+```
 
 ## Useful commands
 
@@ -110,13 +262,10 @@ Hermes remains the persistent service/agent layer. VS Code and Antigravity are o
 hermes doctor
 hermes auth list
 hermes model
-
-tmux attach -t hermes-agents
-
-hermes chat --provider anthropic --model claude-opus-5
-hermes chat --provider openai-api --model gpt-5.6-sol
-
 hermes gateway setup
+
+tmux ls
+tmux attach -t hermes-agents
 ```
 
 ## Repository layout
@@ -135,16 +284,18 @@ hermes gateway setup
 └── .gitignore
 ```
 
-## Update resilience
+## Design philosophy
 
-The installer enables the repository's post-update guard when supported. After Hermes changes, the guard reapplies provider/model settings, runs diagnostics, checks auth status, and verifies the local `hermes-claude-auth` checkout for drift.
+This project deliberately keeps the pieces loosely coupled:
 
-For a guarded manual update:
+**Hermes owns persistence.** Editors come and go.
 
-```bash
-./hermes-safe-update.sh
-```
+**tmux owns terminal continuity.** SSH disconnects should not kill your agents.
 
-## Notes
+**Git worktrees own edit isolation.** Multiple coding agents should not fight over one checkout.
 
-The optional `hermes-claude-auth` project is cloned persistently to `~/hermes-claude-auth`. If that directory has local changes, the installer skips `git pull` so they are not overwritten.
+**Provider configuration stays portable.** The workstation should be able to use different model providers without rebuilding the whole environment.
+
+**Front ends stay optional.** VS Code, Antigravity, Telegram, or plain SSH can all coexist around the same Hermes host.
+
+That turns one Linux box into something closer to a small self-hosted AI operations console than a single-purpose chat client.
