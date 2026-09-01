@@ -8,7 +8,11 @@ set -Eeuo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 PATCH_REPO="$HOME/hermes-claude-auth"
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-6}"
+
+# Current preferred Claude models, ordered strongest/default to fallback.
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5}"
+CLAUDE_MODEL_FALLBACK_1="${CLAUDE_MODEL_FALLBACK_1:-claude-opus-4-8}"
+CLAUDE_MODEL_FALLBACK_2="${CLAUDE_MODEL_FALLBACK_2:-claude-sonnet-5}"
 
 HERMES_INSTALL_URL="https://hermes-agent.nousresearch.com/install.sh"
 CLAUDE_INSTALL_URL="https://claude.ai/install.sh"
@@ -192,6 +196,7 @@ configure_hermes() {
 
     success "Hermes default provider: anthropic"
     success "Hermes default model: $CLAUDE_MODEL"
+    info "Fallback models: $CLAUDE_MODEL_FALLBACK_1, $CLAUDE_MODEL_FALLBACK_2"
 }
 
 diagnose_hermes() {
@@ -210,23 +215,46 @@ show_auth_status() {
     hermes auth list || warn "'hermes auth list' did not complete successfully."
 }
 
-smoke_test() {
-    info "Running Anthropic smoke test with $CLAUDE_MODEL..."
-    printf '%s\n' "------------------------------------------------------------"
+smoke_test_model() {
+    local model="$1"
 
+    info "Testing model: $model"
     if hermes chat \
         --provider anthropic \
-        --model "$CLAUDE_MODEL" \
+        --model "$model" \
         -q "Reply with exactly: AUTH TEST OK" \
         -Q
     then
+        success "Smoke test passed with $model."
+        return 0
+    fi
+
+    warn "Smoke test failed with $model."
+    return 1
+}
+
+smoke_test() {
+    printf '%s\n' "------------------------------------------------------------"
+
+    if smoke_test_model "$CLAUDE_MODEL"; then
         printf '%s\n' "------------------------------------------------------------"
-        success "Hermes Anthropic smoke test passed."
+        return 0
+    fi
+
+    warn "Primary model unavailable. Trying $CLAUDE_MODEL_FALLBACK_1..."
+    if smoke_test_model "$CLAUDE_MODEL_FALLBACK_1"; then
+        printf '%s\n' "------------------------------------------------------------"
+        return 0
+    fi
+
+    warn "Second model unavailable. Trying $CLAUDE_MODEL_FALLBACK_2..."
+    if smoke_test_model "$CLAUDE_MODEL_FALLBACK_2"; then
+        printf '%s\n' "------------------------------------------------------------"
         return 0
     fi
 
     printf '%s\n' "------------------------------------------------------------"
-    warn "Hermes could not complete the Anthropic smoke test."
+    warn "Hermes could not complete an Anthropic smoke test with any configured model."
     return 1
 }
 
@@ -247,7 +275,9 @@ summary() {
     printf '\n'
 
     printf 'Hermes home:   %s\n' "$HERMES_HOME"
-    printf 'Model:         %s\n' "$CLAUDE_MODEL"
+    printf 'Default model: %s\n' "$CLAUDE_MODEL"
+    printf 'Fallback #1:   %s\n' "$CLAUDE_MODEL_FALLBACK_1"
+    printf 'Fallback #2:   %s\n' "$CLAUDE_MODEL_FALLBACK_2"
     printf 'Patch source:  %s\n' "$PATCH_REPO"
 
     printf '\nUseful commands:\n\n'
@@ -255,6 +285,8 @@ summary() {
     printf '  hermes auth list\n'
     printf '  hermes model\n'
     printf '  hermes chat --provider anthropic --model %s\n' "$CLAUDE_MODEL"
+    printf '  hermes chat --provider anthropic --model %s\n' "$CLAUDE_MODEL_FALLBACK_1"
+    printf '  hermes chat --provider anthropic --model %s\n' "$CLAUDE_MODEL_FALLBACK_2"
     printf '  hermes gateway setup\n'
     printf '\n'
 }
