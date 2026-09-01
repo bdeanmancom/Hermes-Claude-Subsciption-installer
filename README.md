@@ -6,34 +6,68 @@ A repeatable Linux/WSL setup script for installing and validating:
 - Hermes Agent
 - Anthropic provider configuration in Hermes
 - OpenAI direct API support in Hermes
+- Automatic post-update health checks
+- Optional VS Code Remote SSH workspace
+- Optional Antigravity integration helpers
+- Optional persistent tmux multi-agent deck
+- Optional per-agent Git worktrees
 - A local clone of `kristianvast/hermes-claude-auth` for inspection
 
-> Note: this repository does **not** automatically execute third-party authentication-bypass patches. It installs the supported Hermes and Claude components, configures providers, runs diagnostics, and leaves the optional patch repository cloned locally for review.
+> Note: this repository does **not** automatically execute third-party authentication-bypass patches. It installs supported Hermes/Claude components, configures providers, runs diagnostics, and leaves the optional patch repository cloned locally for review.
 
 ## Quick start
+
+Core setup only:
 
 ```bash
 chmod +x setup-hermes-claude.sh
 ./setup-hermes-claude.sh
 ```
 
-If Claude authentication has not yet been completed, run:
+Core setup plus VS Code and persistent multi-agent tmux sessions:
 
 ```bash
-claude
+./setup-hermes-claude.sh --vscode --multi-agent
 ```
 
-Complete the Claude.ai login, exit Claude, then rerun:
+Everything:
 
 ```bash
-./setup-hermes-claude.sh
+./setup-hermes-claude.sh --all
 ```
 
-The script is designed to be rerunnable. Existing installations are detected and reused where possible.
+If Claude authentication has not yet been completed, run `claude`, complete the Claude.ai login, exit Claude, and rerun the installer.
+
+## Optional modules
+
+```text
+--vscode              Create VS Code Remote SSH workspace/tasks
+--antigravity         Create Antigravity integration helpers/notes
+--multi-agent         Create persistent tmux agent deck
+--worktrees [PATH]    Create per-agent Git worktrees
+--all                 Enable all optional modules
+```
+
+Examples:
+
+```bash
+./setup-hermes-claude.sh --antigravity
+./setup-hermes-claude.sh --worktrees ~/src/my-project
+./setup-hermes-claude.sh --vscode --antigravity --multi-agent
+```
+
+The default tmux deck creates four persistent windows:
+
+```text
+architect
+implementer
+reviewer
+research
+```
+
+The worktree module creates matching branches/worktrees under `~/hermes-worktrees/` so concurrent coding agents do not edit the same checkout.
 
 ## Anthropic models
-
-The installer uses the following Claude stack:
 
 ```text
 Primary:      claude-opus-5
@@ -41,20 +75,11 @@ Fallback #1: claude-opus-4-8
 Fallback #2: claude-sonnet-5
 ```
 
-Override them for one run with environment variables:
-
-```bash
-CLAUDE_MODEL=claude-opus-5 \
-CLAUDE_MODEL_FALLBACK_1=claude-opus-4-8 \
-CLAUDE_MODEL_FALLBACK_2=claude-sonnet-5 \
-./setup-hermes-claude.sh
-```
+Override them with `CLAUDE_MODEL`, `CLAUDE_MODEL_FALLBACK_1`, and `CLAUDE_MODEL_FALLBACK_2`.
 
 ## OpenAI models
 
 Hermes direct OpenAI API support uses provider `openai-api` and detects `OPENAI_API_KEY` from your shell or `~/.hermes/.env`.
-
-The configured OpenAI stack is:
 
 ```text
 Primary:      gpt-5.6-sol
@@ -62,41 +87,22 @@ Fallback #1: gpt-5.6-terra
 Fallback #2: gpt-5.6-luna
 ```
 
-To enable OpenAI, add your key to:
+Do not commit API keys to this repository.
+
+## Architecture
 
 ```text
-~/.hermes/.env
+VS Code Remote SSH / Antigravity / Telegram
+                 |
+                 v
+        Linux / WSL Hermes host
+                 |
+      Hermes + tmux + Git worktrees
+        |                    |
+     Anthropic             OpenAI
 ```
 
-For example:
-
-```bash
-OPENAI_API_KEY=your-key-here
-```
-
-Do not commit real API keys to this repository.
-
-You can override the OpenAI model stack for one run:
-
-```bash
-OPENAI_MODEL=gpt-5.6-sol \
-OPENAI_MODEL_FALLBACK_1=gpt-5.6-terra \
-OPENAI_MODEL_FALLBACK_2=gpt-5.6-luna \
-./setup-hermes-claude.sh
-```
-
-## What the script does
-
-1. Verifies base dependencies such as `git` and `curl`.
-2. Installs Claude Code with Anthropic's native installer if needed.
-3. Runs `claude doctor` and checks for Claude credentials.
-4. Installs Hermes using the official Hermes installer if needed.
-5. Configures Hermes to use Anthropic with `claude-opus-5` as the default model.
-6. Detects `OPENAI_API_KEY` and enables OpenAI direct API smoke testing when available.
-7. Runs `hermes doctor` and `hermes auth list`.
-8. Clones or safely updates `~/hermes-claude-auth` without overwriting local changes.
-9. Smoke-tests Anthropic using Opus 5, then Opus 4.8, then Sonnet 5 if needed.
-10. Smoke-tests OpenAI using GPT-5.6 Sol, Terra, then Luna if needed.
+Hermes remains the persistent service/agent layer. VS Code and Antigravity are optional front ends, while tmux keeps sessions alive through editor disconnects.
 
 ## Useful commands
 
@@ -105,13 +111,10 @@ hermes doctor
 hermes auth list
 hermes model
 
-hermes chat --provider anthropic --model claude-opus-5
-hermes chat --provider anthropic --model claude-opus-4-8
-hermes chat --provider anthropic --model claude-sonnet-5
+tmux attach -t hermes-agents
 
+hermes chat --provider anthropic --model claude-opus-5
 hermes chat --provider openai-api --model gpt-5.6-sol
-hermes chat --provider openai-api --model gpt-5.6-terra
-hermes chat --provider openai-api --model gpt-5.6-luna
 
 hermes gateway setup
 ```
@@ -122,15 +125,26 @@ hermes gateway setup
 .
 ├── README.md
 ├── setup-hermes-claude.sh
+├── install-update-guard.sh
+├── hermes-safe-update.sh
+├── modules/
+│   ├── setup-vscode.sh
+│   ├── setup-antigravity.sh
+│   ├── setup-tmux-agents.sh
+│   └── setup-worktrees.sh
 └── .gitignore
+```
+
+## Update resilience
+
+The installer enables the repository's post-update guard when supported. After Hermes changes, the guard reapplies provider/model settings, runs diagnostics, checks auth status, and verifies the local `hermes-claude-auth` checkout for drift.
+
+For a guarded manual update:
+
+```bash
+./hermes-safe-update.sh
 ```
 
 ## Notes
 
-The optional `hermes-claude-auth` project is cloned to:
-
-```text
-~/hermes-claude-auth
-```
-
-If that directory already exists and contains local changes, the installer intentionally skips `git pull` so those changes are not overwritten.
+The optional `hermes-claude-auth` project is cloned persistently to `~/hermes-claude-auth`. If that directory has local changes, the installer skips `git pull` so they are not overwritten.
