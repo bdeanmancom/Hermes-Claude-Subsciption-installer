@@ -2,8 +2,8 @@
 # ==============================================================================
 # setup-hermes-claude.sh
 # Repeatable setup for Claude Code + Hermes Agent on Linux / WSL2
-# Supports Anthropic + OpenAI direct API
-# ============================================================================== 
+# Supports Anthropic + OpenAI direct API plus optional IDE/multi-agent modules
+# ==============================================================================
 
 set -Eeuo pipefail
 
@@ -23,6 +23,12 @@ OPENAI_MODEL_FALLBACK_2="${OPENAI_MODEL_FALLBACK_2:-gpt-5.6-luna}"
 HERMES_INSTALL_URL="https://hermes-agent.nousresearch.com/install.sh"
 CLAUDE_INSTALL_URL="https://claude.ai/install.sh"
 PATCH_REPO_URL="https://github.com/kristianvast/hermes-claude-auth.git"
+
+ENABLE_VSCODE=0
+ENABLE_ANTIGRAVITY=0
+ENABLE_MULTI_AGENT=0
+ENABLE_WORKTREES=0
+WORKTREE_REPO=""
 
 if [[ -t 1 ]]; then
     GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
@@ -46,6 +52,67 @@ trap 'on_error $LINENO' ERR
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 ensure_path() { export PATH="$HOME/.local/bin:$HOME/.hermes/bin:$PATH"; }
+
+usage() {
+    cat <<'EOF'
+Usage: ./setup-hermes-claude.sh [options]
+
+Core setup always installs/configures Claude Code + Hermes + OpenAI support.
+Optional modules:
+
+  --vscode              Create VS Code Remote SSH workspace/tasks
+  --antigravity         Create Antigravity integration notes/workspace helpers
+  --multi-agent         Create persistent tmux multi-agent deck
+  --worktrees [PATH]    Create agent Git worktrees for PATH (default: current dir)
+  --all                 Enable VS Code, Antigravity, tmux agents, and worktrees
+  -h, --help            Show this help
+
+Examples:
+  ./setup-hermes-claude.sh --vscode --multi-agent
+  ./setup-hermes-claude.sh --worktrees ~/src/my-project
+  ./setup-hermes-claude.sh --all
+EOF
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --vscode)
+                ENABLE_VSCODE=1
+                ;;
+            --antigravity)
+                ENABLE_ANTIGRAVITY=1
+                ;;
+            --multi-agent)
+                ENABLE_MULTI_AGENT=1
+                ;;
+            --worktrees)
+                ENABLE_WORKTREES=1
+                if [[ $# -gt 1 && "${2:-}" != --* ]]; then
+                    WORKTREE_REPO="$2"
+                    shift
+                else
+                    WORKTREE_REPO="$PWD"
+                fi
+                ;;
+            --all)
+                ENABLE_VSCODE=1
+                ENABLE_ANTIGRAVITY=1
+                ENABLE_MULTI_AGENT=1
+                ENABLE_WORKTREES=1
+                WORKTREE_REPO="${WORKTREE_REPO:-$PWD}"
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                die "Unknown option: $1. Use --help for available options."
+                ;;
+        esac
+        shift
+    done
+}
 
 banner() {
     printf "\n${GREEN}${BOLD}"
@@ -183,6 +250,26 @@ smoke_test_openai() {
     smoke_test_model openai-api "$OPENAI_MODEL_FALLBACK_2"
 }
 
+run_module() {
+    local module="$1"
+    shift || true
+    local path="$SCRIPT_DIR/modules/$module"
+
+    [[ -f "$path" ]] || die "Optional module not found: $path"
+    chmod +x "$path"
+    "$path" "$@"
+}
+
+run_optional_modules() {
+    [[ "$ENABLE_VSCODE" -eq 1 ]] && run_module setup-vscode.sh
+    [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]] && run_module setup-antigravity.sh
+    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && run_module setup-tmux-agents.sh
+
+    if [[ "$ENABLE_WORKTREES" -eq 1 ]]; then
+        run_module setup-worktrees.sh "${WORKTREE_REPO:-$PWD}"
+    fi
+}
+
 summary() {
     printf '\n${GREEN}${BOLD}Setup complete.${NC}\n'
     printf 'Hermes home:       %s\n' "$HERMES_HOME"
@@ -191,10 +278,17 @@ summary() {
     printf 'OpenAI primary:    %s\n' "$OPENAI_MODEL"
     printf 'OpenAI fallbacks:  %s, %s\n' "$OPENAI_MODEL_FALLBACK_1" "$OPENAI_MODEL_FALLBACK_2"
     printf 'Update guard log:  %s/logs/post-update-guard.log\n' "$HERMES_HOME"
+
+    [[ "$ENABLE_VSCODE" -eq 1 ]] && printf 'VS Code module:    enabled\n'
+    [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]] && printf 'Antigravity:       enabled\n'
+    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && printf 'tmux agent deck:   enabled\n'
+    [[ "$ENABLE_WORKTREES" -eq 1 ]] && printf 'Agent worktrees:   %s\n' "${WORKTREE_REPO:-$PWD}"
+
     printf '\nFor a guarded manual update: ./hermes-safe-update.sh\n'
 }
 
 main() {
+    parse_args "$@"
     banner
     ensure_path
     install_base_dependencies
@@ -215,6 +309,7 @@ main() {
     [[ "$claude_auth_ok" -eq 1 ]] && smoke_test_anthropic || true
     [[ "$openai_auth_ok" -eq 1 ]] && smoke_test_openai || true
 
+    run_optional_modules
     summary
 }
 
