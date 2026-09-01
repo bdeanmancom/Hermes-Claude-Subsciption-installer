@@ -2,9 +2,10 @@
 set -Eeuo pipefail
 
 TARGET_DIR="${HERMES_WORKSPACE_ROOT:-$HOME/hermes-workspace}"
+SESSION_NAME="${HERMES_TMUX_SESSION:-hermes-agents}"
 mkdir -p "$TARGET_DIR"
 
-cat > "$TARGET_DIR/ANTIGRAVITY.md" <<'EOF'
+cat > "$TARGET_DIR/ANTIGRAVITY.md" <<EOF
 # Antigravity + Hermes
 
 Use this machine as the persistent Hermes host and connect to the same project over SSH.
@@ -14,15 +15,20 @@ Recommended split:
 - Antigravity is an optional interactive IDE/client for Gemini-backed work.
 - Keep each coding agent on its own Git worktree when agents may edit concurrently.
 
+Configured tmux session:
+
+\`$SESSION_NAME\`
+
 Useful remote commands:
 
-```bash
+\`\`\`bash
 hermes doctor
 hermes auth list
-tmux attach -t hermes-agents
-```
+tmux attach -t $SESSION_NAME
+\`\`\`
 
-Do not store API keys in project files. Keep provider secrets in `~/.hermes/.env` or the provider's supported credential store.
+Do not store API keys in project files. Keep provider secrets in \`~/.hermes/.env\` or the provider's supported credential store.
 EOF
 
 echo "Antigravity integration notes created at: $TARGET_DIR/ANTIGRAVITY.md"
+echo "Agent tmux session: $SESSION_NAME"
