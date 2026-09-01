@@ -1,0 +1,28 @@
+# Local environment / credentials
+.env
+.env.*
+!.env.example
+
+# Claude / Hermes local state
+.claude/
+.hermes/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.swp
