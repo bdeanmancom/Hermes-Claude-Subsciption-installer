@@ -2,17 +2,24 @@
 # ==============================================================================
 # setup-hermes-claude.sh
 # Repeatable setup for Claude Code + Hermes Agent on Linux / WSL2
+# Supports Anthropic + OpenAI direct API
 # ==============================================================================
 
 set -Eeuo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_ENV="$HERMES_HOME/.env"
 PATCH_REPO="$HOME/hermes-claude-auth"
 
-# Current preferred Claude models, ordered strongest/default to fallback.
+# Anthropic models, strongest/default to fallback.
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5}"
 CLAUDE_MODEL_FALLBACK_1="${CLAUDE_MODEL_FALLBACK_1:-claude-opus-4-8}"
 CLAUDE_MODEL_FALLBACK_2="${CLAUDE_MODEL_FALLBACK_2:-claude-sonnet-5}"
+
+# OpenAI models, strongest to cost-efficient.
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.6-sol}"
+OPENAI_MODEL_FALLBACK_1="${OPENAI_MODEL_FALLBACK_1:-gpt-5.6-terra}"
+OPENAI_MODEL_FALLBACK_2="${OPENAI_MODEL_FALLBACK_2:-gpt-5.6-luna}"
 
 HERMES_INSTALL_URL="https://hermes-agent.nousresearch.com/install.sh"
 CLAUDE_INSTALL_URL="https://claude.ai/install.sh"
@@ -56,7 +63,7 @@ trap 'on_error $LINENO' ERR
 banner() {
     printf "\n${GREEN}${BOLD}"
     printf '%s\n' "============================================================"
-    printf '%s\n' "        Hermes Agent + Claude Code Setup"
+    printf '%s\n' "      Hermes Agent + Claude Code + OpenAI Setup"
     printf '%s\n' "============================================================"
     printf "${NC}\n"
 }
@@ -189,14 +196,39 @@ update_or_clone_patch_repo() {
 }
 
 configure_hermes() {
-    info "Configuring Hermes Anthropic provider..."
+    info "Configuring Hermes default provider..."
 
+    # Keep Anthropic as the default provider. OpenAI remains immediately
+    # selectable with --provider openai-api whenever OPENAI_API_KEY is present.
     hermes config set model.provider anthropic
     hermes config set model.default "$CLAUDE_MODEL"
 
     success "Hermes default provider: anthropic"
     success "Hermes default model: $CLAUDE_MODEL"
-    info "Fallback models: $CLAUDE_MODEL_FALLBACK_1, $CLAUDE_MODEL_FALLBACK_2"
+    info "Claude alternatives: $CLAUDE_MODEL_FALLBACK_1, $CLAUDE_MODEL_FALLBACK_2"
+    info "OpenAI models: $OPENAI_MODEL, $OPENAI_MODEL_FALLBACK_1, $OPENAI_MODEL_FALLBACK_2"
+}
+
+load_hermes_env() {
+    if [[ -f "$HERMES_ENV" ]]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "$HERMES_ENV"
+        set +a
+    fi
+}
+
+check_openai_auth() {
+    load_hermes_env
+
+    if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+        success "OPENAI_API_KEY detected. OpenAI direct API is available in Hermes."
+        return 0
+    fi
+
+    warn "OPENAI_API_KEY not found. OpenAI models are configured/documented but cannot be smoke-tested yet."
+    warn "Add OPENAI_API_KEY to $HERMES_ENV or export it in your shell."
+    return 1
 }
 
 diagnose_hermes() {
@@ -216,46 +248,50 @@ show_auth_status() {
 }
 
 smoke_test_model() {
-    local model="$1"
+    local provider="$1"
+    local model="$2"
 
-    info "Testing model: $model"
+    info "Testing $provider model: $model"
     if hermes chat \
-        --provider anthropic \
+        --provider "$provider" \
         --model "$model" \
         -q "Reply with exactly: AUTH TEST OK" \
         -Q
     then
-        success "Smoke test passed with $model."
+        success "Smoke test passed with $provider / $model."
         return 0
     fi
 
-    warn "Smoke test failed with $model."
+    warn "Smoke test failed with $provider / $model."
     return 1
 }
 
-smoke_test() {
+smoke_test_anthropic() {
     printf '%s\n' "------------------------------------------------------------"
 
-    if smoke_test_model "$CLAUDE_MODEL"; then
+    smoke_test_model anthropic "$CLAUDE_MODEL" || \
+    smoke_test_model anthropic "$CLAUDE_MODEL_FALLBACK_1" || \
+    smoke_test_model anthropic "$CLAUDE_MODEL_FALLBACK_2" || {
+        warn "Anthropic smoke test failed with all configured Claude models."
         printf '%s\n' "------------------------------------------------------------"
-        return 0
-    fi
-
-    warn "Primary model unavailable. Trying $CLAUDE_MODEL_FALLBACK_1..."
-    if smoke_test_model "$CLAUDE_MODEL_FALLBACK_1"; then
-        printf '%s\n' "------------------------------------------------------------"
-        return 0
-    fi
-
-    warn "Second model unavailable. Trying $CLAUDE_MODEL_FALLBACK_2..."
-    if smoke_test_model "$CLAUDE_MODEL_FALLBACK_2"; then
-        printf '%s\n' "------------------------------------------------------------"
-        return 0
-    fi
+        return 1
+    }
 
     printf '%s\n' "------------------------------------------------------------"
-    warn "Hermes could not complete an Anthropic smoke test with any configured model."
-    return 1
+}
+
+smoke_test_openai() {
+    printf '%s\n' "------------------------------------------------------------"
+
+    smoke_test_model openai-api "$OPENAI_MODEL" || \
+    smoke_test_model openai-api "$OPENAI_MODEL_FALLBACK_1" || \
+    smoke_test_model openai-api "$OPENAI_MODEL_FALLBACK_2" || {
+        warn "OpenAI smoke test failed with all configured GPT models."
+        printf '%s\n' "------------------------------------------------------------"
+        return 1
+    }
+
+    printf '%s\n' "------------------------------------------------------------"
 }
 
 summary() {
@@ -266,19 +302,21 @@ summary() {
     printf '%s\n' "============================================================"
     printf "${NC}"
 
-    printf 'Claude Code:   '
+    printf 'Claude Code:     '
     command -v claude 2>/dev/null || printf 'NOT FOUND'
     printf '\n'
 
-    printf 'Hermes:        '
+    printf 'Hermes:          '
     command -v hermes 2>/dev/null || printf 'NOT FOUND'
     printf '\n'
 
-    printf 'Hermes home:   %s\n' "$HERMES_HOME"
-    printf 'Default model: %s\n' "$CLAUDE_MODEL"
-    printf 'Fallback #1:   %s\n' "$CLAUDE_MODEL_FALLBACK_1"
-    printf 'Fallback #2:   %s\n' "$CLAUDE_MODEL_FALLBACK_2"
-    printf 'Patch source:  %s\n' "$PATCH_REPO"
+    printf 'Hermes home:     %s\n' "$HERMES_HOME"
+    printf 'Default provider: anthropic\n'
+    printf 'Claude default:  %s\n' "$CLAUDE_MODEL"
+    printf 'Claude fallback: %s, %s\n' "$CLAUDE_MODEL_FALLBACK_1" "$CLAUDE_MODEL_FALLBACK_2"
+    printf 'OpenAI primary:  %s\n' "$OPENAI_MODEL"
+    printf 'OpenAI fallback: %s, %s\n' "$OPENAI_MODEL_FALLBACK_1" "$OPENAI_MODEL_FALLBACK_2"
+    printf 'Patch source:    %s\n' "$PATCH_REPO"
 
     printf '\nUseful commands:\n\n'
     printf '  hermes doctor\n'
@@ -287,6 +325,9 @@ summary() {
     printf '  hermes chat --provider anthropic --model %s\n' "$CLAUDE_MODEL"
     printf '  hermes chat --provider anthropic --model %s\n' "$CLAUDE_MODEL_FALLBACK_1"
     printf '  hermes chat --provider anthropic --model %s\n' "$CLAUDE_MODEL_FALLBACK_2"
+    printf '  hermes chat --provider openai-api --model %s\n' "$OPENAI_MODEL"
+    printf '  hermes chat --provider openai-api --model %s\n' "$OPENAI_MODEL_FALLBACK_1"
+    printf '  hermes chat --provider openai-api --model %s\n' "$OPENAI_MODEL_FALLBACK_2"
     printf '  hermes gateway setup\n'
     printf '\n'
 }
@@ -298,6 +339,8 @@ main() {
     install_claude
 
     local claude_auth_ok=1
+    local openai_auth_ok=1
+
     check_claude_auth || claude_auth_ok=0
 
     install_hermes
@@ -306,10 +349,18 @@ main() {
     diagnose_hermes || true
     show_auth_status || true
 
+    check_openai_auth || openai_auth_ok=0
+
     if [[ "$claude_auth_ok" -eq 1 ]]; then
-        smoke_test || true
+        smoke_test_anthropic || true
     else
         warn "Skipping Anthropic smoke test until Claude authentication is complete."
+    fi
+
+    if [[ "$openai_auth_ok" -eq 1 ]]; then
+        smoke_test_openai || true
+    else
+        warn "Skipping OpenAI smoke test until OPENAI_API_KEY is configured."
     fi
 
     summary
