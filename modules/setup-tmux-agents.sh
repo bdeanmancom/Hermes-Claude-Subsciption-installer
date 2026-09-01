@@ -14,6 +14,7 @@ mkdir -p "$WORKSPACE_ROOT"
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   echo "tmux session '$SESSION_NAME' already exists."
+  echo "Attach with: tmux attach -t $SESSION_NAME"
   exit 0
 fi
 
@@ -33,14 +34,27 @@ IMPLEMENTER_DIR="$(agent_dir implementer)"
 REVIEWER_DIR="$(agent_dir reviewer)"
 RESEARCH_DIR="$(agent_dir research)"
 
-tmux new-session -d -s "$SESSION_NAME" -n architect -c "$ARCHITECT_DIR"
-tmux new-window -t "$SESSION_NAME" -n implementer -c "$IMPLEMENTER_DIR"
-tmux new-window -t "$SESSION_NAME" -n reviewer -c "$REVIEWER_DIR"
-tmux new-window -t "$SESSION_NAME" -n research -c "$RESEARCH_DIR"
+# One tmux window, four tiled panes. This makes the full agent team visible
+# at once while preserving a separate working directory for every role.
+tmux new-session -d -s "$SESSION_NAME" -n agents -c "$ARCHITECT_DIR"
+tmux split-window -h -t "$SESSION_NAME:agents.0" -c "$IMPLEMENTER_DIR"
+tmux split-window -v -t "$SESSION_NAME:agents.0" -c "$REVIEWER_DIR"
+tmux split-window -v -t "$SESSION_NAME:agents.1" -c "$RESEARCH_DIR"
+tmux select-layout -t "$SESSION_NAME:agents" tiled
 
-for window in architect implementer reviewer research; do
-  tmux send-keys -t "$SESSION_NAME:$window" "printf '\nHermes agent pane: $window\nWorking directory: %s\nStart with: hermes chat\n\n' \"\$PWD\"" C-m
+# Capture pane ids after the final tiled layout and label each role explicitly.
+mapfile -t PANES < <(tmux list-panes -t "$SESSION_NAME:agents" -F '#{pane_id}')
+ROLES=(architect implementer reviewer research)
+
+for i in "${!ROLES[@]}"; do
+  role="${ROLES[$i]}"
+  pane="${PANES[$i]}"
+  tmux select-pane -t "$pane" -T "$role"
+  tmux send-keys -t "$pane" "printf '\nHermes agent: $role\nWorking directory: %s\nStart with: hermes chat\n\n' \"\$PWD\"" C-m
 done
 
-echo "Created tmux agent session: $SESSION_NAME"
+tmux select-pane -t "$SESSION_NAME:agents.0"
+
+echo "Created four-pane tmux agent session: $SESSION_NAME"
 echo "Attach with: tmux attach -t $SESSION_NAME"
+echo "Move between panes with: Ctrl+b, then an arrow key"
