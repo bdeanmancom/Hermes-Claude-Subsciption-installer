@@ -77,15 +77,9 @@ EOF
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --vscode)
-                ENABLE_VSCODE=1
-                ;;
-            --antigravity)
-                ENABLE_ANTIGRAVITY=1
-                ;;
-            --multi-agent)
-                ENABLE_MULTI_AGENT=1
-                ;;
+            --vscode) ENABLE_VSCODE=1 ;;
+            --antigravity) ENABLE_ANTIGRAVITY=1 ;;
+            --multi-agent) ENABLE_MULTI_AGENT=1 ;;
             --worktrees)
                 ENABLE_WORKTREES=1
                 if [[ $# -gt 1 && "${2:-}" != --* ]]; then
@@ -102,13 +96,8 @@ parse_args() {
                 ENABLE_WORKTREES=1
                 WORKTREE_REPO="${WORKTREE_REPO:-$PWD}"
                 ;;
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            *)
-                die "Unknown option: $1. Use --help for available options."
-                ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "Unknown option: $1. Use --help for available options." ;;
         esac
         shift
     done
@@ -124,19 +113,39 @@ banner() {
 
 install_base_dependencies() {
     local missing=()
-    for cmd in git curl; do command_exists "$cmd" || missing+=("$cmd"); done
-    [[ ${#missing[@]} -eq 0 ]] && { success "Base dependencies already installed."; return; }
+    local need_tmux=0
+
+    for cmd in git curl; do
+        command_exists "$cmd" || missing+=("$cmd")
+    done
+
+    if [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && ! command_exists tmux; then
+        need_tmux=1
+        missing+=("tmux")
+    fi
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        success "Required dependencies already installed."
+        return
+    fi
 
     warn "Missing dependencies: ${missing[*]}"
+
     if command_exists apt-get; then
         sudo apt-get update
-        sudo apt-get install -y git curl ca-certificates xz-utils
+        sudo apt-get install -y git curl ca-certificates xz-utils $([[ "$need_tmux" -eq 1 ]] && printf 'tmux')
     elif command_exists dnf; then
-        sudo dnf install -y git curl ca-certificates xz
+        sudo dnf install -y git curl ca-certificates xz $([[ "$need_tmux" -eq 1 ]] && printf 'tmux')
     elif command_exists pacman; then
-        sudo pacman -Sy --needed --noconfirm git curl ca-certificates xz
+        sudo pacman -Sy --needed --noconfirm git curl ca-certificates xz $([[ "$need_tmux" -eq 1 ]] && printf 'tmux')
     else
-        die "Unsupported package manager. Install git, curl, ca-certificates, and xz manually."
+        die "Unsupported package manager. Install git, curl, ca-certificates, xz, and tmux when using --multi-agent."
+    fi
+
+    command_exists git || die "git is still unavailable after dependency installation."
+    command_exists curl || die "curl is still unavailable after dependency installation."
+    if [[ "$ENABLE_MULTI_AGENT" -eq 1 ]]; then
+        command_exists tmux || die "tmux is still unavailable after dependency installation."
     fi
 }
 
@@ -261,13 +270,15 @@ run_module() {
 }
 
 run_optional_modules() {
-    [[ "$ENABLE_VSCODE" -eq 1 ]] && run_module setup-vscode.sh
-    [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]] && run_module setup-antigravity.sh
-    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && run_module setup-tmux-agents.sh
-
+    # Create worktrees first so the tmux deck can start each agent inside its
+    # dedicated checkout when both features are enabled.
     if [[ "$ENABLE_WORKTREES" -eq 1 ]]; then
         run_module setup-worktrees.sh "${WORKTREE_REPO:-$PWD}"
     fi
+
+    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && run_module setup-tmux-agents.sh
+    [[ "$ENABLE_VSCODE" -eq 1 ]] && run_module setup-vscode.sh
+    [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]] && run_module setup-antigravity.sh
 }
 
 summary() {
@@ -281,8 +292,8 @@ summary() {
 
     [[ "$ENABLE_VSCODE" -eq 1 ]] && printf 'VS Code module:    enabled\n'
     [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]] && printf 'Antigravity:       enabled\n'
-    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && printf 'tmux agent deck:   enabled\n'
-    [[ "$ENABLE_WORKTREES" -eq 1 ]] && printf 'Agent worktrees:   %s\n' "${WORKTREE_REPO:-$PWD}"
+    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && printf 'tmux agent deck:   %s\n' "${HERMES_TMUX_SESSION:-hermes-agents}"
+    [[ "$ENABLE_WORKTREES" -eq 1 ]] && printf 'Agent worktrees:   %s\n' "${HERMES_WORKTREE_ROOT:-$HOME/hermes-worktrees}"
 
     printf '\nFor a guarded manual update: ./hermes-safe-update.sh\n'
 }
