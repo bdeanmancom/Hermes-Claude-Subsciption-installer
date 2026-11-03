@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 SESSION_NAME="${HERMES_TMUX_SESSION:-hermes-agents}"
-WORKTREE_ROOT="${HERMES_WORKTREE_ROOT:-/srv/hermes/worktrees}"
+# Must match the default in modules/setup-worktrees.sh.
+WORKTREE_ROOT="${HERMES_WORKTREE_ROOT:-$HOME/hermes-worktrees}"
 
 command -v tmux >/dev/null 2>&1 || {
   echo "tmux is required. Install it and rerun this module." >&2
@@ -48,13 +49,22 @@ RESEARCH_DIR="$(require_agent_worktree research)"
 
 # One tmux window, four tiled panes. Every pane is pinned to a distinct Git
 # worktree. There is intentionally no shared-workspace fallback.
-tmux new-session -d -s "$SESSION_NAME" -n agents -c "$ARCHITECT_DIR"
-tmux split-window -h -t "$SESSION_NAME:agents.0" -c "$IMPLEMENTER_DIR"
-tmux split-window -v -t "$SESSION_NAME:agents.0" -c "$REVIEWER_DIR"
-tmux split-window -v -t "$SESSION_NAME:agents.1" -c "$RESEARCH_DIR"
+#
+# Each pane ID is captured from the command that created it (-P -F
+# '#{pane_id}'). Do not read the mapping back from `list-panes` order:
+# `select-layout tiled` renumbers panes by screen position, so three of the
+# four banners would claim a worktree the pane is not actually sitting in.
+ARCHITECT_PANE="$(tmux new-session -d -s "$SESSION_NAME" -n agents \
+  -c "$ARCHITECT_DIR" -P -F '#{pane_id}')"
+IMPLEMENTER_PANE="$(tmux split-window -h -t "$ARCHITECT_PANE" \
+  -c "$IMPLEMENTER_DIR" -P -F '#{pane_id}')"
+REVIEWER_PANE="$(tmux split-window -v -t "$ARCHITECT_PANE" \
+  -c "$REVIEWER_DIR" -P -F '#{pane_id}')"
+RESEARCH_PANE="$(tmux split-window -v -t "$IMPLEMENTER_PANE" \
+  -c "$RESEARCH_DIR" -P -F '#{pane_id}')"
 tmux select-layout -t "$SESSION_NAME:agents" tiled
 
-mapfile -t PANES < <(tmux list-panes -t "$SESSION_NAME:agents" -F '#{pane_id}')
+PANES=("$ARCHITECT_PANE" "$IMPLEMENTER_PANE" "$REVIEWER_PANE" "$RESEARCH_PANE")
 ROLES=(architect implementer reviewer research)
 DIRS=("$ARCHITECT_DIR" "$IMPLEMENTER_DIR" "$REVIEWER_DIR" "$RESEARCH_DIR")
 
@@ -66,7 +76,7 @@ for i in "${!ROLES[@]}"; do
   tmux send-keys -t "$pane" "printf '\nHermes agent: $role\nWorkspace: $dir\nBranch: agent/$role\nStart with: hermes chat\n\n'" C-m
 done
 
-tmux select-pane -t "$SESSION_NAME:agents.0"
+tmux select-pane -t "$ARCHITECT_PANE"
 
 echo "Created isolated four-pane tmux agent session: $SESSION_NAME"
 echo "Worktree root: $WORKTREE_ROOT"
