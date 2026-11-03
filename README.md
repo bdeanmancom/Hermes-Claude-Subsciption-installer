@@ -121,13 +121,26 @@ reviewer
 research
 ```
 
-Each role gets its own tmux window. If matching agent worktrees exist, each window opens directly inside its own checkout.
-
-You can override the session name:
+Each role gets its own pane in a single tiled tmux window, pinned to its own Git worktree. The deck refuses to start unless all four agent worktrees exist on their `agent/<role>` branches, so pair it with `--worktrees` (or run `--all`):
 
 ```bash
-HERMES_TMUX_SESSION=my-agents ./setup-hermes-claude.sh --multi-agent
+./setup-hermes-claude.sh --multi-agent --worktrees ~/src/my-project
 ```
+
+Later, start or reattach the deck with:
+
+```bash
+./start-hermes-agents.sh          # attach, creating the deck if needed
+./start-hermes-agents.sh --rebuild
+```
+
+You can override the session name and the worktree root:
+
+```bash
+HERMES_TMUX_SESSION=my-agents HERMES_WORKTREE_ROOT=~/agents ./setup-hermes-claude.sh --all
+```
+
+Both the worktree module and the tmux deck read `HERMES_WORKTREE_ROOT`, so they always agree on where the agent checkouts live.
 
 VS Code and Antigravity helpers honor the same configured session name.
 
@@ -172,7 +185,7 @@ Provider credentials should stay in supported credential stores or local configu
 
 Never commit API keys or local credentials to this repository.
 
-Model choices can be overridden with environment variables rather than editing the scripts, for example:
+The defaults are `claude-opus-5-5` (falling back to `claude-opus-5`, then `claude-sonnet-5-5`) and `gpt-5.6-sol` (falling back to `gpt-5.6-terra`, then `gpt-5.6-luna`). Model choices can be overridden with environment variables rather than editing the scripts, for example:
 
 ```bash
 CLAUDE_MODEL=your-claude-model \
@@ -191,6 +204,16 @@ claude
 Complete the Claude login, exit the CLI, then rerun the setup script.
 
 The installer runs diagnostics and checks for local Claude credentials before attempting Anthropic smoke tests.
+
+Hermes itself supports Anthropic OAuth natively and reuses Claude Code's credential store when it is present. If the Anthropic smoke test fails after setup, run the built-in selector and pick the Anthropic OAuth option:
+
+```bash
+hermes model
+# or, non-interactively:
+hermes auth add anthropic --type oauth
+```
+
+Per the Hermes provider docs, the OAuth route needs a Claude Max plan with extra usage credits enabled. Claude Pro plans and the base Max allowance do not work with it; use an `ANTHROPIC_API_KEY` in `~/.hermes/.env` instead.
 
 ## Update resilience
 
@@ -274,7 +297,9 @@ tmux attach -t hermes-agents
 .
 ├── README.md
 ├── setup-hermes-claude.sh
+├── start-hermes-agents.sh
 ├── install-update-guard.sh
+├── post-hermes-update.sh
 ├── hermes-safe-update.sh
 ├── modules/
 │   ├── setup-vscode.sh

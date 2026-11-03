@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 PATCH_REPO="$HOME/hermes-claude-auth"
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5-5}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

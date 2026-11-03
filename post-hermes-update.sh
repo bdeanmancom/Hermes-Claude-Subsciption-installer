@@ -5,7 +5,7 @@ HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 HERMES_ENV="$HERMES_HOME/.env"
 PATCH_REPO="$HOME/hermes-claude-auth"
 
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5-5}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.6-sol}"
 
 LOG_DIR="$HERMES_HOME/logs"

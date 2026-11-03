@@ -12,9 +12,9 @@ HERMES_ENV="$HERMES_HOME/.env"
 PATCH_REPO="$HOME/hermes-claude-auth"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5}"
-CLAUDE_MODEL_FALLBACK_1="${CLAUDE_MODEL_FALLBACK_1:-claude-opus-4-8}"
-CLAUDE_MODEL_FALLBACK_2="${CLAUDE_MODEL_FALLBACK_2:-claude-sonnet-5}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5-5}"
+CLAUDE_MODEL_FALLBACK_1="${CLAUDE_MODEL_FALLBACK_1:-claude-opus-5}"
+CLAUDE_MODEL_FALLBACK_2="${CLAUDE_MODEL_FALLBACK_2:-claude-sonnet-5-5}"
 
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.6-sol}"
 OPENAI_MODEL_FALLBACK_1="${OPENAI_MODEL_FALLBACK_1:-gpt-5.6-terra}"
@@ -191,13 +191,14 @@ update_or_clone_patch_repo() {
     if [[ -d "$PATCH_REPO/.git" ]]; then
         if [[ -n "$(git -C "$PATCH_REPO" status --porcelain)" ]]; then
             warn "hermes-claude-auth has local changes; skipping pull."
-        else
-            git -C "$PATCH_REPO" pull --ff-only
+        elif ! git -C "$PATCH_REPO" pull --ff-only; then
+            warn "Could not update $PATCH_REPO; keeping the existing checkout."
         fi
     elif [[ -e "$PATCH_REPO" ]]; then
         die "$PATCH_REPO exists but is not a Git repository."
-    else
-        git clone "$PATCH_REPO_URL" "$PATCH_REPO"
+    elif ! git clone "$PATCH_REPO_URL" "$PATCH_REPO"; then
+        warn "Could not clone $PATCH_REPO_URL; the optional checkout is skipped."
+        return 0
     fi
     success "Optional repository available at $PATCH_REPO."
     warn "Its authentication-bypass installer is not executed by this script."
@@ -276,13 +277,21 @@ run_optional_modules() {
         run_module setup-worktrees.sh "${WORKTREE_REPO:-$PWD}"
     fi
 
-    [[ "$ENABLE_MULTI_AGENT" -eq 1 ]] && run_module setup-tmux-agents.sh
-    [[ "$ENABLE_VSCODE" -eq 1 ]] && run_module setup-vscode.sh
-    [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]] && run_module setup-antigravity.sh
+    # Plain if-blocks: a trailing "[[ ... ]] && run_module" returns 1 when the
+    # module is disabled, and under set -e that aborted the whole setup.
+    if [[ "$ENABLE_MULTI_AGENT" -eq 1 ]]; then
+        run_module setup-tmux-agents.sh
+    fi
+    if [[ "$ENABLE_VSCODE" -eq 1 ]]; then
+        run_module setup-vscode.sh
+    fi
+    if [[ "$ENABLE_ANTIGRAVITY" -eq 1 ]]; then
+        run_module setup-antigravity.sh
+    fi
 }
 
 summary() {
-    printf '\n${GREEN}${BOLD}Setup complete.${NC}\n'
+    printf '\n%bSetup complete.%b\n' "${GREEN}${BOLD}" "$NC"
     printf 'Hermes home:       %s\n' "$HERMES_HOME"
     printf 'Claude default:    %s\n' "$CLAUDE_MODEL"
     printf 'Claude fallbacks:  %s, %s\n' "$CLAUDE_MODEL_FALLBACK_1" "$CLAUDE_MODEL_FALLBACK_2"
